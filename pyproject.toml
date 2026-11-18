@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mindslice-manage"
+dynamic = ["version"]  # mindslice_manage.__version__
+description = "One place to see and align the versions of a group of related repos"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+mindslice-manage = "mindslice_manage.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "mindslice_manage.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mindslice_manage = ["prompts/*.md"]

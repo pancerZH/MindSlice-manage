@@ -1,0 +1,32 @@
+# MindSlice-manage 配置模板：复制成 config.toml 再按本机修改（config.toml 不进 git）。
+# 相对路径都相对本文件；~ 会展开。spec 写在本文件旁边的 managed/，运行记录在 runs/。
+
+[paths]
+clones = "repos"          # 只给了 url 的仓库，discover 时 clone 到这里
+
+# 要管理的仓库：本地路径，或只给 url。项目名默认取 pyproject.toml 的 [project].name，
+# 没有时取 origin 的仓库名，再没有取目录名；也可以用 name = "..." 指定
+[[repos]]
+path = "~/code/my-engine"
+
+[[repos]]
+path = "~/code/my-plugin"
+
+[[repos]]
+url = "git@github.com:someone/some-repo.git"
+
+# discover 用的 agent 会话；{prompt} 换成 prompt，resume 里的 {session_id} 换成上一轮的会话 id
+[harness]
+cmd = ["agy", "--print={prompt}", "--model", "gemini-4-hydrogen-high", "--output-format", "json",
+       "--dangerously-skip-permissions", "--disable-slash-commands"]
+resume = ["agy", "--conversation", "{session_id}", "--print={prompt}", "--model", "gemini-4-hydrogen-high",
+          "--output-format", "json", "--dangerously-skip-permissions", "--disable-slash-commands"]
+timeout_minutes = 20
+repairs = 2               # 核验不过时最多修几轮
+
+# 本机安装位置；不写就用这些默认值
+[hosts]
+# pipx_venvs = "~/.local/share/pipx/venvs"
+# claude = "~/.claude/plugins/installed_plugins.json"
+# agy = "~/.gemini/config/plugins"
+# codex = "~/.codex/plugins/cache"

@@ -1,0 +1,9 @@
+# this machine's settings, agent-generated specs and run records stay local
+config.toml
+PLAN.md
+managed/
+runs/
+repos/
+__pycache__/
+*.egg-info/
+build/
