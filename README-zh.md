@@ -35,6 +35,21 @@ mindslice-manage test [<name>]     # 跑测试
 
 `config.toml`、`managed/` 和 `runs/` 有本机路径和 agent 生成的内容，都不进 git。
 
+## 定时任务
+
+spec 里登记了定时任务（systemd 用户定时器）的项目，`status` 会多一张表：运行时间、是否启用、上次运行（时间、结果、耗时）、下次运行、收件人。`check` 会报告这些问题：
+- timer 没安装或没启用；
+- 上次运行失败；
+- 装的 unit 和仓库模板不一致（两边的 `@REPO@` 和 `%h` 都展开后比较，忽略空行和注释）；
+- linger 没开；
+- 发信账号文件不存在或缺键，收件人为空；
+- 还没运行过。
+
+manage 不改 systemd，也不改各项目的配置，只给出命令或位置：
+- 改运行时间：改仓库模板里的 `OnCalendar`，再执行 check 给出的重装命令；
+- 启用或停用：`systemctl --user enable --now <timer>` 或 `disable --now <timer>`；
+- 改收件人：`status --json` 里的 `mail.to_where` 指明写在哪个文件的哪个键。
+
 ## 测试
 
 ```sh

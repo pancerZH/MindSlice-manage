@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import sources
+from . import jobs, sources
 from .config import Config, Project, Spec
 from .locations import LocationError, read_text, read_value, release_part, build_part, spans, version_key
 
@@ -31,11 +31,15 @@ class Context:
         self.cfg, self.projects, self.online, self.fetch = cfg, projects, online, fetch
         self.by_name = {p.name: p for p in projects}
         self.remote: dict[str, dict] = {}
+        self.units: dict[str, dict] | None = {}
+        self.linger: bool | None = None
 
     def prefetch(self) -> None:
         todo = [p for p in self.projects if p.spec and p.repo.is_dir()]
         with ThreadPoolExecutor(8) as ex:
             self.remote = dict(zip([p.name for p in todo], ex.map(self._fetch, todo)))
+        if names := jobs.unit_names(todo):
+            self.units, self.linger = sources.units(names), sources.linger()
 
     def _fetch(self, p: Project) -> dict:
         facts = {"pypi": None, "tags": sources.tags(p.repo, remote=False), "remote_tags": None, "errors": []}
@@ -110,7 +114,7 @@ def version_pattern(version: str) -> re.Pattern:
 
 
 def uncovered(repo: Path, spec: Spec, versions: list[str], files: list[str] | None = None) -> list[dict]:
-    """Occurrences of the versions in tracked files that no location captures and no ignore pattern skips."""
+    """Occurrences of the versions in the repo's files that no location captures and no ignore pattern skips."""
     if not versions:
         return []
     covered: dict[str, list[tuple[int, int]]] = {}
@@ -118,7 +122,7 @@ def uncovered(repo: Path, spec: Spec, versions: list[str], files: list[str] | No
         covered.setdefault(loc.file, []).extend(spans(repo, loc))
     patterns = [version_pattern(v) for v in sorted(set(versions))]
     out = []
-    for f in files if files is not None else sources.tracked_files(repo):
+    for f in files if files is not None else sources.repo_files(repo):
         if any(fnmatch.fnmatch(f, pat) for pat in spec.ignore):
             continue
         path = repo / f
@@ -241,6 +245,10 @@ def inspect(ctx: Context, p: Project) -> tuple[dict, list[Finding]]:
     # installed copies
     state["installs"] = installs(ctx, p, version, add)
 
+    # scheduled jobs and mail
+    state["mail"] = jobs.mail_state(p, add) if spec.mail else None
+    state["jobs"] = jobs.inspect_jobs(ctx.units, p, add, (state["mail"] or {}).get("to", []))
+
     # versions nobody manages
     search = [v for v in [version] + [d.get("value") for d in state["deps"] if d["kind"] == "pin"] if v]
     state["uncovered"] = uncovered(repo, spec, search)
@@ -332,6 +340,8 @@ def run_all(ctx: Context, names: list[str] | None = None) -> tuple[list[dict], l
         s, f = inspect(ctx, p)
         states.append(s)
         found += f
+    if ctx.linger is False and any(s.get("jobs") for s in states):
+        found.append(Finding("warning", "本机", "linger 没开：注销后定时任务不会运行", "loginctl enable-linger"))
     found.sort(key=lambda f: LEVELS.index(f.level))
     return states, found
 

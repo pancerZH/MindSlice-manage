@@ -46,6 +46,32 @@ class Dep:
 
 
 @dataclass
+class Job:
+    timer: str
+    templates: list[str] = field(default_factory=list)
+
+    @property
+    def service(self) -> str:
+        return self.timer.removesuffix(".timer") + ".service"
+
+
+@dataclass
+class Ref:
+    """A value in a TOML file: file is relative to the repo (or ~/...), or "@account" for the mail account file."""
+    file: str
+    key: str
+
+    def __str__(self) -> str:
+        return f"{self.file} 的 {self.key}"
+
+
+@dataclass
+class Mail:
+    account: Ref  # where the path of the SMTP account file is written
+    to: Ref | None = None  # where the recipients are
+
+
+@dataclass
 class Spec:
     name: str
     version: list[Location]
@@ -60,6 +86,8 @@ class Spec:
     verify: list[Command] = field(default_factory=list)
     test: list[Command] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    jobs: list[Job] = field(default_factory=list)
+    mail: Mail | None = None
 
     def all_locations(self) -> list[Location]:
         return self.version + [loc for d in self.deps for loc in d.locations]
@@ -239,6 +267,11 @@ class _Checker:
             return []
         return [loc for i, d in enumerate(v) if (loc := self.location(d, f"{where}[{i}]"))]
 
+    def ref(self, d, where: str) -> Ref | None:
+        if self.table(d, where, {"file", "key"}) is None:
+            return None
+        return Ref(self.str_(d, "file", where, required=True), self.str_(d, "key", where, required=True))
+
     def commands(self, v, where: str) -> list[Command]:
         if not isinstance(v, list):
             self.err(where, "应为命令列表")
@@ -264,7 +297,8 @@ class _Checker:
 def parse_spec(data: dict, name: str) -> tuple[Spec, list[str]]:
     """The spec in data, and every schema error in it (empty when it is well-formed)."""
     c = _Checker()
-    c.table(data, "spec", {"schema", "name", "ignore", "version", "release", "deps", "installs", "commands", "notes"})
+    c.table(data, "spec", {"schema", "name", "ignore", "version", "release", "deps", "installs", "commands", "notes",
+                           "jobs", "mail"})
     if data.get("schema") != 1:
         c.err("schema", "应为 1")
     if data.get("name") != name:
@@ -335,4 +369,26 @@ def parse_spec(data: dict, name: str) -> tuple[Spec, list[str]]:
         spec.build = c.commands(cm.get("build", []), "commands.build")
         spec.verify = c.commands(cm.get("verify", []), "commands.verify")
         spec.test = c.commands(cm.get("test", []), "commands.test")
+
+    jobs = data.get("jobs", [])
+    if not isinstance(jobs, list):
+        c.err("jobs", "应为表数组（[[jobs]]）")
+        jobs = []
+    for i, j in enumerate(jobs):
+        w = f"jobs[{i}]"
+        if c.table(j, w, {"timer", "templates"}) is not None:
+            job = Job(c.str_(j, "timer", w, required=True), c.strs(j, "templates", w))
+            if job.timer and not job.timer.endswith(".timer"):
+                c.err(w, "timer 应以 .timer 结尾")
+            if job.templates and not any(Path(t).name == job.timer for t in job.templates):
+                c.err(w, f"templates 里没有 {job.timer} 的模板")
+            spec.jobs.append(job)
+    if (m := c.table(data.get("mail", {}), "mail", {"account", "to"})) is not None and m:
+        account = c.ref(m.get("account"), "mail.account") if "account" in m else None
+        if account is None:
+            c.err("mail", "缺少 account")
+        else:
+            spec.mail = Mail(account, c.ref(m["to"], "mail.to") if "to" in m else None)
+            if account.file == "@account":
+                c.err("mail.account", "account 不能引用 @account")
     return spec, c.errors

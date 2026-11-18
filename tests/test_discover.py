@@ -90,15 +90,29 @@ class Discover(Workspace):
 class Verify(Workspace):
     def test_errors(self):
         self.repo("engine", ENGINE)
-        lib = self.repo("lib", {"pyproject.toml": 'version = "0.1.0"\n'})
-        (lib / "untracked.txt").write_text('version = "0.1.0"\n')
-        text = GOOD.replace("lib/__init__.py", "untracked.txt").replace('project = "engine"', 'project = "other"')
+        lib = self.repo("lib", {"pyproject.toml": 'version = "0.1.0"\n', ".gitignore": "local.txt\n"})
+        (lib / "local.txt").write_text('version = "0.1.0"\n')
+        text = GOOD.replace("lib/__init__.py", "local.txt").replace('project = "engine"', 'project = "other"')
         text = text.replace('"python3"', '"no-such-tool-xyz"')
         result = discover.verify(lib, text, "lib", {"engine"})
         errors = "\n".join(result["errors"])
-        self.assertIn("不是被 git 跟踪的文件", errors)
+        self.assertIn("local.txt: 不在仓库里", errors)
         self.assertIn("'other' 不是受管项目", errors)
         self.assertIn("no-such-tool-xyz", errors)
+
+    def test_jobs_and_mail(self):
+        self.repo("engine", ENGINE)
+        lib = self.repo("lib", {"pyproject.toml": '[project]\nversion = "0.4.0"\ndependencies = ["engine>=1.0"]\n',
+                                "lib/__init__.py": '__version__ = "0.4.0"\n', "CHANGELOG.md": "",
+                                "systemd/lib.timer": "[Timer]\nOnCalendar=daily\n", "systemd/notes.txt": "hello",
+                                "config.toml": '[mail]\nsmtp = "/nowhere/smtp.toml"\n'})
+        text = GOOD + '[[jobs]]\ntimer = "lib.timer"\ntemplates = ["systemd/lib.timer", "systemd/notes.txt"]\n' \
+            '[mail]\naccount = { file = "config.toml", key = "mail.account" }\n'
+        errors = "\n".join(discover.verify(lib, text, "lib", {"engine"})["errors"])
+        self.assertIn("systemd/notes.txt: 不是 systemd unit", errors)
+        self.assertIn("没有 mail.account", errors)
+        fixed = text.replace(', "systemd/notes.txt"', "").replace("mail.account", "mail.smtp")
+        self.assertEqual(discover.verify(lib, fixed, "lib", {"engine"})["errors"], [])  # the account file need not exist
 
     def test_inconsistency_is_reported_not_rejected(self):
         self.repo("engine", ENGINE)

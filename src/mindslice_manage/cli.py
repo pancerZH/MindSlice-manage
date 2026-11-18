@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import actions, check, discover
+from . import actions, check, discover, jobs
 from .config import ConfigError, load_config, load_projects
 from .locations import LocationError
 
@@ -76,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(states, ensure_ascii=False, indent=2))
                 else:
                     print(check.table(check.status_rows(states)))
+                    if job_rows := jobs.rows(states):
+                        print("\n" + check.table(job_rows))
                     counts = {lv: sum(f.level == lv for f in found) for lv in check.LEVELS}
                     if counts["error"] or counts["warning"]:
                         print(f"\n{counts['error']} 个错误，{counts['warning']} 个警告：mindslice-manage check 查看")

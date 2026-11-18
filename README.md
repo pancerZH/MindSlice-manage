@@ -37,6 +37,21 @@ mindslice-manage test [<name>]     # run the tests
 
 `config.toml`, `managed/` and `runs/` hold machine paths and agent-written content, and stay out of git.
 
+## Scheduled jobs
+
+For projects whose spec lists scheduled jobs (systemd user timers), `status` adds a table: schedule, enabled or not, last run (time, result, duration), next run, recipients. `check` reports:
+- a timer that is not installed or not enabled;
+- a last run that failed;
+- an installed unit that differs from the repo's template (compared with `@REPO@` and `%h` filled in on both sides, blank lines and comments left out);
+- linger being off;
+- a mail account file that is missing or lacks keys, or no recipients;
+- a job that has not run yet.
+
+manage changes neither systemd nor the projects' configs; it gives the command or the place instead:
+- change the schedule: edit `OnCalendar` in the repo's template, then run the reinstall command check prints;
+- enable or disable: `systemctl --user enable --now <timer>` or `disable --now <timer>`;
+- change the recipients: `mail.to_where` in `status --json` names the file and key.
+
 ## Tests
 
 ```sh

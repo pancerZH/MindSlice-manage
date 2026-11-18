@@ -5,7 +5,7 @@ MindSlice-manage 集中管理几个相互依赖的仓库的版本号：项目自
 ## 这次运行
 
 - 项目名：`{{name}}`
-- 仓库快照：当前目录下的 `repo/`（{{files}} 个文件）。快照里只有被 git 跟踪的文件，没有 `.git`，被 ignore 的本地文件也不在里面。
+- 仓库快照：当前目录下的 `repo/`（{{files}} 个文件）。快照里是仓库的文件（被 git 跟踪的，以及还没提交、但没被 .gitignore 忽略的新文件），没有 `.git`，被 ignore 的本地文件不在里面。
 - 输入：当前目录下的 `input.json`。`projects` 列出全部受管项目：`name` 是项目名，`package` 是 Python 包名（pyproject 里的 name，可能为空；不代表发布到了 PyPI），`remote` 是 git 地址。依赖只登记对这些项目的依赖。
 - 输出：把 spec 写到当前目录下的 `proposal.toml`。这是你唯一要写的文件。
 
@@ -21,6 +21,8 @@ TOML。下面是全部字段；没有用到的节和字段可以省略，不要�
 schema = 1
 name = "{{name}}"          # 必须是这个值
 ignore = []                # 搜索"未登记的版本号"时跳过的文件（glob，相对仓库根；* 可跨目录）
+notes = []                 # 拿不准、需要人看的地方，一句一条
+                           # 以上几个顶层的键要写在所有 [节] 之前：TOML 里节后面的键属于那一节
 
 [version]                  # 本项目自己的版本号：所有位置的值必须相同
 locations = [ { file = "pyproject.toml", regex = '(?m)^version = "([^"]+)"' } ]
@@ -44,7 +46,13 @@ build = []                 # 版本号改动后重新生成生成物
 verify = []                # 检查生成物是否最新
 test = []                  # 测试
 
-notes = []                 # 拿不准、需要人看的地方，一句一条
+[[jobs]]                   # 定时运行的任务（systemd 用户定时器），一个 timer 一节
+timer = ""                 # timer 的名字，如 "example.timer"；它启动的 service 默认同名（example.service）
+templates = []             # 仓库里这个任务的 unit 模板文件（timer 和 service 都列上），@REPO@ 代表仓库路径
+
+[mail]                     # 项目会发邮件时：发信账号和收件人写在哪（键用点分隔）
+account = { file = "", key = "" }   # 哪个文件的哪个键写着发信账号文件的路径
+to = { file = "", key = "" }        # 收件人写在哪；在账号文件里时 file = "@account"
 ```
 
 **位置**的写法：`{ file, regex, count = 1, format = "version", value = "version", update = [] }`
@@ -74,6 +82,12 @@ notes = []                 # 拿不准、需要人看的地方，一句一条
    - `hint`：README 里更新已安装插件的命令（只给人看，不会被执行）；没有就留空。
 4. **本机运行方式**：项目用仓库里的 venv 运行（systemd 服务或脚本里用 `uv run`，README 让人 `uv sync`）时，`installs.venv = ".venv"`。
 5. **命令**：从 CI 工作流和 README 里找。测试按 CI 矩阵展开，每个组合一条，矩阵变量放进 `env`；去掉只在 CI 里需要的准备步骤；用本机能直接跑的写法（uv 项目用 `uv run ...`）。
+
+6. **定时任务**：仓库里含 `[Timer]`、`[Service]` 节的文件（常在 `systemd/` 目录），以及 README 里教人安装的 systemd 用户定时器。每个 timer 一节 `[[jobs]]`。`templates` 只列仓库里真实存在的模板文件；unit 只写在 README 里、没有文件时，`templates` 留空，并在 `notes` 里说明。
+7. **邮件**：项目发邮件时，找出它的配置里哪个键写着发信账号文件（SMTP 账号）的路径，以及收件人写在哪个文件的哪个键。看 `config.toml`、`config.example.toml`、README。
+   - `file` 写项目实际读的那个文件：只有 `config.example.toml` 被提交、本地复制成 `config.toml` 使用时，写 `config.toml`，键名照 `config.example.toml`。
+   - 账号文件不在仓库里，不用去找它；收件人写在账号文件里时，用 `file = "@account"`。
+   - 不发邮件的项目省略 `[mail]`。
 
 `ignore` 还应该包括：CHANGELOG、历史记录类文档、测试数据里与本项目无关的版本号。只是别的包碰巧同号的地方，也加进 `ignore`。
 

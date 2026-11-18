@@ -1,8 +1,10 @@
 """Where the facts come from: git, PyPI and the copies installed on this machine."""
 
+import getpass
 import json
 import re
 import subprocess
+import tomllib
 import urllib.error
 import urllib.request
 from importlib import metadata
@@ -22,9 +24,11 @@ def git(repo: Path, *args: str, check: bool = True) -> str:
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
-def tracked_files(repo: Path) -> list[str]:
-    out = subprocess.run(["git", "-C", str(repo), "ls-files", "-z"], capture_output=True, check=True).stdout
-    return [f for f in out.decode("utf-8", "surrogateescape").split("\0") if f]
+def repo_files(repo: Path) -> list[str]:
+    """The repo's files: the tracked ones and the new ones that .gitignore does not exclude."""
+    out = subprocess.run(["git", "-C", str(repo), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                         capture_output=True, check=True).stdout
+    return sorted({f for f in out.decode("utf-8", "surrogateescape").split("\0") if f})
 
 
 def dirty(repo: Path, files: list[str] | None = None) -> list[str]:
@@ -145,3 +149,53 @@ def plugin_version(host: str, plugin_id: str, hosts: dict[str, Path]) -> str | N
 
 
 READABLE_HOSTS = ("claude", "agy", "codex")
+
+
+# systemd user units
+
+UNIT_PROPS = ("Id", "LoadState", "UnitFileState", "ActiveState", "Result", "NextElapseUSecRealtime", "LastTriggerUSec",
+              "ExecMainStartTimestamp", "ExecMainStartTimestampMonotonic", "ExecMainExitTimestampMonotonic", "FragmentPath")
+
+
+def units(names: list[str]) -> dict[str, dict] | None:
+    """{unit: properties} from `systemctl --user show`, or None when the user manager cannot be asked."""
+    if not names:
+        return {}
+    try:
+        done = subprocess.run(["systemctl", "--user", "show", *names, "-p", ",".join(UNIT_PROPS)],
+                              capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode != 0:
+        return None
+    out = {}
+    for block in done.stdout.strip().split("\n\n"):
+        props = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+        if props.get("Id"):
+            out[props["Id"]] = props
+    return out
+
+
+def linger() -> bool | None:
+    """Whether the user's units keep running while the user is logged out; None if it cannot be told."""
+    try:
+        done = subprocess.run(["loginctl", "show-user", getpass.getuser(), "-p", "Linger"],
+                              capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return done.stdout.strip() == "Linger=yes" if done.returncode == 0 else None
+
+
+def toml_key(path: Path, key: str):
+    """The value of a dotted key in a TOML file; LookupError (with the reason) if it cannot be read."""
+    try:
+        value = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise LookupError(f"{path} 不存在") from None
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise LookupError(f"{path} 读不了：{e}") from None
+    for part in key.split("."):
+        if not isinstance(value, dict) or part not in value:
+            raise LookupError(f"{path} 里没有 {key}")
+        value = value[part]
+    return value

@@ -49,6 +49,14 @@ class Schema(unittest.TestCase):
         self.assertEqual(errors(ok), [])
         self.assertTrue(errors(GOOD + '[commands]\ntest = [ "make test" ]\n'))
 
+    def test_jobs_and_mail(self):
+        ok = GOOD + '[[jobs]]\ntimer = "a.timer"\ntemplates = ["systemd/a.timer", "systemd/a.service"]\n' \
+            '[mail]\naccount = { file = "config.toml", key = "mail.smtp" }\nto = { file = "@account", key = "to" }\n'
+        self.assertEqual(errors(ok), [])
+        self.assertTrue(any(".timer 结尾" in e for e in errors(GOOD + '[[jobs]]\ntimer = "a.service"\n')))
+        self.assertTrue(any("没有 a.timer 的模板" in e for e in errors(GOOD + '[[jobs]]\ntimer = "a.timer"\ntemplates = ["x.service"]\n')))
+        self.assertTrue(any("缺少 account" in e for e in errors(GOOD + '[mail]\nto = { file = "c", key = "k" }\n')))
+
     def test_host(self):
         bad = GOOD + '[release]\nplugins = [ { host = "vim", id = "x" } ]\n'
         self.assertTrue(any("host" in e for e in errors(bad)))

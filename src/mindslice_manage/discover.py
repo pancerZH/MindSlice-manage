@@ -3,6 +3,7 @@
 import difflib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -15,13 +16,14 @@ from pathlib import Path
 from . import sources
 from .check import own_version, uncovered, dep_values, pinned_version
 from .config import Config, Project, Spec, parse_spec
-from .locations import LocationError, read_value
+from .locations import LocationError, read_text, read_value
 
 # variables a parent harness leaks into children; without them the child starts a standalone session (as in MindSlice-dream)
 STRIP_PREFIXES = ("ANTIGRAVITY_", "CLAUDE_CODE_", "CODEX_", "MINDSLICE_PLUGIN_", "PLUGIN_")
 STRIP_NAMES = {"CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "AI_AGENT"}
 SESSION_KEYS = ("session_id", "conversation_id", "thread_id", "sessionId", "conversationId")
 RUN_VAR = "MINDSLICE_MANAGE_RUN"
+UNIT_SECTION = re.compile(r"(?m)^\[(Unit|Service|Timer)\]\s*$")
 
 
 # the harness session
@@ -119,9 +121,9 @@ def fill(argv: list[str], **values: str) -> list[str]:
 # inputs
 
 def snapshot(repo: Path, dest: Path) -> int:
-    """Copy the tracked files (as they are in the working tree) to dest; the number copied."""
+    """Copy the repo's files (tracked, or new and not ignored; as they are in the working tree) to dest; the count."""
     n = 0
-    for f in sources.tracked_files(repo):
+    for f in sources.repo_files(repo):
         src = repo / f
         if not src.exists() and not src.is_symlink():
             continue  # deleted in the working tree
@@ -162,10 +164,10 @@ def verify(repo: Path, text: str, name: str, known: set[str]) -> dict:
         return result
     spec, errors = parse_spec(data, name)
     result["errors"] += errors
-    tracked = set(sources.tracked_files(repo))
+    files = set(sources.repo_files(repo))
     for loc in spec.all_locations():
-        if loc.file not in tracked:
-            result["errors"].append(f"{loc.file}: 不是被 git 跟踪的文件")
+        if loc.file not in files:
+            result["errors"].append(f"{loc.file}: 不在仓库里（不存在，或被 .gitignore 忽略）")
             continue
         try:
             read_value(repo, loc)
@@ -174,6 +176,14 @@ def verify(repo: Path, text: str, name: str, known: set[str]) -> dict:
     for dep in spec.deps:
         if dep.project not in known:
             result["errors"].append(f"deps: {dep.project!r} 不是受管项目（可选：{', '.join(sorted(known))}）")
+    for job in spec.jobs:
+        for tpl in job.templates:
+            if tpl not in files:
+                result["errors"].append(f"{tpl}: 不在仓库里（不存在，或被 .gitignore 忽略）")
+            elif not UNIT_SECTION.search(read_text(repo / tpl)):
+                result["errors"].append(f"{tpl}: 不是 systemd unit（没有 [Unit]、[Service] 或 [Timer] 节）")
+    if spec.mail:
+        result["errors"] += mail_errors(repo, spec.mail)
     commands = [c.cmd for c in spec.build + spec.verify + spec.test] + [loc.update for loc in spec.all_locations() if loc.update]
     for cmd in commands:
         if cmd and not shutil.which(cmd[0]) and not (repo / cmd[0]).exists():
@@ -192,9 +202,33 @@ def verify(repo: Path, text: str, name: str, known: set[str]) -> dict:
             else:
                 result["inconsistent"].append(f"对 {dep.project} 的锁定不一致：" +
                                               ", ".join(f"{r['file']}={r['value']}" for r in drows if r["kind"] == "version"))
-    result["uncovered"] = uncovered(repo, spec, ([version] if version else []) + pins, sorted(tracked))
+    result["uncovered"] = uncovered(repo, spec, ([version] if version else []) + pins, sorted(files))
     result["spec"] = spec
     return result
+
+
+def mail_errors(repo: Path, mail) -> list[str]:
+    """Keys that cannot be read in mail files that exist; a missing local config is left to check."""
+    errors, account = [], None
+    config = repo / Path(mail.account.file).expanduser()
+    if config.is_file():
+        try:
+            account = config.parent / Path(str(sources.toml_key(config, mail.account.key))).expanduser()
+        except LookupError as e:
+            errors.append(f"mail.account: {e}")
+    if mail.to and mail.to.file != "@account":
+        where = repo / Path(mail.to.file).expanduser()
+        if where.is_file():
+            try:
+                sources.toml_key(where, mail.to.key)
+            except LookupError as e:
+                errors.append(f"mail.to: {e}")
+    elif mail.to and account and account.is_file():
+        try:
+            sources.toml_key(account, mail.to.key)
+        except LookupError as e:
+            errors.append(f"mail.to: {e}")
+    return errors
 
 
 def repair_prompt(result: dict, proposal: str | None) -> str:
@@ -225,6 +259,10 @@ def summary(spec: Spec, repo: Path) -> str:
         lines.append(f"仓库 venv：{spec.venv}")
     for label, cmds in (("build", spec.build), ("verify", spec.verify), ("test", spec.test)):
         lines += [f"{label}：{c}" for c in cmds]
+    for job in spec.jobs:
+        lines.append(f"定时任务：{job.timer}" + (f"（模板 {', '.join(job.templates)}）" if job.templates else "（没有模板）"))
+    if spec.mail:
+        lines.append(f"邮件：账号路径在 {spec.mail.account}" + (f"，收件人在 {spec.mail.to}" if spec.mail.to else ""))
     if spec.ignore:
         lines.append("ignore：" + ", ".join(spec.ignore))
     lines += [f"note：{n}" for n in spec.notes]
