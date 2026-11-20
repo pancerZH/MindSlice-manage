@@ -72,6 +72,18 @@ class Discover(Workspace):
         self.assertFalse((run / "work").exists())
         self.assertTrue((run / "proposal.toml").is_file())
 
+    def test_snapshot_copies_untracked_files_and_skips_symlinked_paths(self):
+        dest = self.root / "snapshot"
+        (self.lib / "new.txt").write_text("new")
+        (self.lib / "linked").symlink_to(self.lib / "new.txt")
+        parent = self.lib / "lib"
+        parent.rename(self.root / "outside")
+        parent.symlink_to(self.root / "outside", target_is_directory=True)
+        discover.snapshot(self.lib, dest)
+        self.assertEqual((dest / "new.txt").read_text(), "new")
+        self.assertFalse((dest / "linked").is_symlink())
+        self.assertFalse((dest / "lib").exists())
+
     def test_not_written_without_yes(self):
         self.propose(0, GOOD.replace('["CHANGELOG.md"]', '["CHANGELOG.md", "README.md"]'))
         ok, cfg = self.run_discover(yes=False, answer="n")

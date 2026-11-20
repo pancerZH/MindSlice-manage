@@ -30,7 +30,7 @@ mindslice-manage test [<name>]     # 跑测试
 
 `status`、`check` 支持 `--offline`（不访问 PyPI 和 origin，只看本地 tag）、`--fetch`（先 git fetch）和 `--json`。`sync` 支持 `--to <版本>` 和 `--dry-run`。
 
-- discover 让 agent（默认 agy + `gemini-4-hydrogen-high`）只读仓库的快照：快照里只有被 git 跟踪的文件，agent 改了快照也碰不到真仓库。spec 的每一条都由程序对照真实仓库核验，不过关就把错误交回 agent 修，最多 `harness.repairs` 轮。
+- discover 让 agent（默认 agy + `gemini-4-hydrogen-high`）读取单独的仓库副本，包含跟踪文件和未忽略的未跟踪普通文件，跳过符号链接。对副本的修改保留在副本中。spec 的每一条都由程序对照真实仓库核验，不过关就把错误交回 agent 修，最多 `harness.repairs` 轮。
 - bump 和 sync 在要改的文件有未提交改动时拒绝执行，改完会把每个位置读回来核对。
 
 `config.toml`、`managed/` 和 `runs/` 有本机路径和 agent 生成的内容，都不进 git。

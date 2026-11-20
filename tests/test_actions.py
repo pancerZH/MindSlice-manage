@@ -2,6 +2,7 @@ import contextlib
 import io
 import sys
 import unittest
+from unittest.mock import patch
 
 from mindslice_manage import actions
 from mindslice_manage.check import run_all
@@ -123,8 +124,34 @@ class Sync(Workspace):
             _, out = quiet(actions.sync, self.ctx(), [], None, True)
             self.assertIn("lock engine: 1.1.0 → 1.2.0", out)
             self.assertIn('"1.1.0"', (app / "uv.lock").read_text())  # dry run
+            with self.assertRaisesRegex(actions.ActionError, "不支持 --to"):
+                quiet(actions.sync, self.ctx(), ["app"], "1.2.0", False)
+            self.assertIn('"1.1.0"', (app / "uv.lock").read_text())
             quiet(actions.sync, self.ctx(), ["app"], None, False)
             self.assertIn('version = "1.2.0"', (app / "uv.lock").read_text())
+
+    def test_exact_version_is_given_to_the_lock_resolver(self):
+        app = self.repo("app", {"uv.lock": 'version = "1.1.0"\n', "VERSION": "0.1.0\n"})
+        self.spec("app", """
+            schema = 1
+            name = "app"
+            [version]
+            locations = [{ file = "VERSION", regex = '^(.*)$' }]
+            [[deps]]
+            project = "engine"
+            kind = "lock"
+            locations = [{ file = "uv.lock", regex = 'version = "([^"]+)"', update = ["uv", "lock", "--upgrade-package", "engine"] }]
+        """)
+
+        def relock(argv, cwd):
+            self.assertEqual(argv, ["uv", "lock", "--upgrade-package", "engine==1.0.0"])
+            self.assertEqual(cwd, app)
+            (cwd / "uv.lock").write_text('version = "1.0.0"\n')
+            return True
+
+        with patch.object(actions, "run", side_effect=relock) as command:
+            quiet(actions.sync, self.ctx(online=False), ["app"], "1.0.0", False)
+            command.assert_called_once()
 
     def test_bump_follows_only_build(self):
         plugin = self.repo("plugin", {"plugin.json": '{"version": "1.2.0-1"}\n', "upstream.lock": '{"version": "1.2.0"}\n'})

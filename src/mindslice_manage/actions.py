@@ -160,6 +160,11 @@ def plan_sync(ctx: Context, p: Project, to: str | None) -> list[tuple]:
         else:
             current = {r["value"] for r in rows}
             if any(version_key(v) < version_key(target) for v in current) or to and current != {target}:
+                if to:
+                    commands = updates_of(dep.locations)
+                    if not commands or any(len(cmd) != 4 or cmd[:3] != ["uv", "lock", "--upgrade-package"]
+                                           for cmd in commands):
+                        raise ActionError(f"{p.name}: lock 更新命令不支持 --to 指定版本")
                 steps.append(("lock", dep, target, ", ".join(sorted(current))))
     return steps
 
@@ -196,6 +201,8 @@ def sync(ctx: Context, names: list[str], to: str | None, dry_run: bool) -> bool:
                         raise ActionError(f"{loc.file}: 改完后读回的值不对")
             else:
                 for cmd in updates_of(dep.locations):
+                    if to:
+                        cmd = [*cmd[:-1], f"{cmd[-1]}=={target}"]
                     if not run(cmd, p.repo):
                         raise ActionError(f"update 命令失败：{shlex.join(cmd)}")
                 after = {r.get("value", r.get("error")) for r in dep_values(p.repo, dep)}

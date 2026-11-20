@@ -125,14 +125,14 @@ def snapshot(repo: Path, dest: Path) -> int:
     n = 0
     for f in sources.repo_files(repo):
         src = repo / f
-        if not src.exists() and not src.is_symlink():
-            continue  # deleted in the working tree
+        # Copy regular files only. A link (including a replaced parent directory)
+        # would give a snapshot consumer access to files outside the copy.
+        relative = src.relative_to(repo)
+        if not src.is_file() or any((repo / part).is_symlink() for part in (relative, *relative.parents[:-1])):
+            continue
         target = dest / f
         target.parent.mkdir(parents=True, exist_ok=True)
-        if src.is_symlink():
-            target.symlink_to(os.readlink(src))
-        elif src.is_file():
-            shutil.copy2(src, target)
+        shutil.copy2(src, target)
         n += 1
     return n
 
