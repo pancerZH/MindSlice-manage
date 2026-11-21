@@ -32,7 +32,7 @@ mindslice-manage test [<name>]     # run the tests
 
 `status` and `check` take `--offline` (no PyPI or origin, local tags only), `--fetch` (git fetch first) and `--json`. `sync` takes `--to <version>` and `--dry-run`.
 
-- discover gives the agent (agy with `gemini-4-hydrogen-high` by default) a separate copy of tracked and non-ignored untracked regular files. Symbolic links are skipped. Edits to the copy stay there. The program checks every entry of the spec against the real repo and hands errors back to the agent, for at most `harness.repairs` rounds.
+- discover gives the agent (agy with `gemini-4-neon-high` by default) a separate copy of tracked and non-ignored untracked regular files. Symbolic links are skipped. Edits to the copy stay there. The program checks every entry of the spec against the real repo and hands errors back to the agent, for at most `harness.repairs` rounds.
 - bump and sync refuse to run when a file they would change has uncommitted changes, and read every location back after the change.
 
 `config.toml`, `managed/` and `runs/` hold machine paths and agent-written content, and stay out of git.

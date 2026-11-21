@@ -17,9 +17,9 @@ url = "git@github.com:someone/some-repo.git"
 
 # discover 用的 agent 会话；{prompt} 换成 prompt，resume 里的 {session_id} 换成上一轮的会话 id
 [harness]
-cmd = ["agy", "--print={prompt}", "--model", "gemini-4-hydrogen-high", "--output-format", "json",
+cmd = ["agy", "--print={prompt}", "--model", "gemini-4-neon-high", "--output-format", "json",
        "--dangerously-skip-permissions", "--disable-slash-commands"]
-resume = ["agy", "--conversation", "{session_id}", "--print={prompt}", "--model", "gemini-4-hydrogen-high",
+resume = ["agy", "--conversation", "{session_id}", "--print={prompt}", "--model", "gemini-4-neon-high",
           "--output-format", "json", "--dangerously-skip-permissions", "--disable-slash-commands"]
 timeout_minutes = 20
 repairs = 2               # 核验不过时最多修几轮
