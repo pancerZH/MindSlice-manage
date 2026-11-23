@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import actions, check, discover, jobs
+from . import actions, check, discover, jobs, release
 from .config import ConfigError, load_config, load_projects
 from .locations import LocationError
 
@@ -52,6 +52,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--to", help="跟进到这个版本，而不是最新发布版")
     p.add_argument("--dry-run", action="store_true", help="只说会改什么")
     p.add_argument("--offline", action="store_true", help="不访问网络（只看本地 tag；锁定 wheel 时不可用）")
+    p = sub.add_parser("release", help="发布一个项目并让下游跟进：改版本号、提交推送、等 CI、打 tag、建 release、"
+                       "等 PyPI，再同步下游、提交推送、更新本机安装；出错就停，重跑会接着做")
+    p.add_argument("name")
+    p.add_argument("version")
+    p.add_argument("--dry-run", action="store_true", help="只说会做什么")
     p = sub.add_parser("test", help="跑测试命令")
     p.add_argument("names", nargs="*", help="不给就跑全部")
     args = ap.parse_args(argv)
@@ -101,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if actions.sync(ctx, args.names, args.to, args.dry_run) else 1
         if args.cmd == "test":
             return 0 if actions.test(ctx, args.names) else 1
+        if args.cmd == "release":
+            return 0 if release.release(ctx, args.name, args.version, args.dry_run) else 1
     except (actions.ActionError, LocationError) as e:
         print(f"\n{e}", file=sys.stderr)
         return 1

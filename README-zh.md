@@ -4,7 +4,7 @@
 
 集中查看和对齐一组相互依赖的仓库的版本号：每个项目自己的版本号写在哪几处、下游对上游的最低版本 / 精确锁定 / lockfile、本机装的 pipx、venv 和宿主插件。
 
-只做本地的事：看板、检查、改文件、跑 build 和测试。commit、push、打 tag、发版、装插件都不做，只打印要执行的命令。
+大部分命令只做本地的事：看板、检查、改文件、跑 build 和测试；commit、push、打 tag、发版、装插件只打印要执行的命令。`release` 是例外：它把一个项目以及 pin 或 lock 它的项目的整个发布做完。
 
 ## 安装
 
@@ -26,12 +26,26 @@ mindslice-manage check             # 列出所有不一致和修法；有错误�
 mindslice-manage bump <name> patch # 改自己的版本号（所有位置）；也可以给 minor / major / build / 具体版本
 mindslice-manage sync [<name>]     # pin 和 lock 跟进上游最新发布版，再跑 build、verify、test
 mindslice-manage test [<name>]     # 跑测试
+mindslice-manage release <name> <版本>  # 发布它，并让下游跟进（见下）
 ```
 
 `status`、`check` 支持 `--offline`（不访问 PyPI 和 origin，只看本地 tag）、`--fetch`（先 git fetch）和 `--json`。`sync` 支持 `--to <版本>` 和 `--dry-run`。
 
 - discover 让 agent（默认 agy + `gemini-4-neon-high`）读取单独的仓库副本，包含跟踪文件和未忽略的未跟踪普通文件，跳过符号链接。对副本的修改保留在副本中。spec 的每一条都由程序对照真实仓库核验，不过关就把错误交回 agent 修，最多 `harness.repairs` 轮。
 - bump 和 sync 在要改的文件有未提交改动时拒绝执行，改完会把每个位置读回来核对。
+
+## 发布
+
+`mindslice-manage release <name> <版本>`（`--dry-run` 只列计划）依次做：
+
+1. 检查这个项目和所有 pin 或 lock 它的项目：工作区干净、在有上游的分支上、不落后于 origin。
+2. 把版本号写进所有位置、跑测试（失败就还原版本号），提交「update version number to <版本>」、推送，等这个提交的 CI。
+3. 打 tag 并推送；有 PyPI 包的，建 GitHub release，等 PyPI 上出现 wheel（发布的 workflow 失败就停）。
+4. 项目自己有 pipx venv 的，装上这个版本。
+5. 逐个下游：`sync --to <版本>`（PyPI 索引延迟时重试），提交（版本号跟随上游的写 `update <name> to <版本>; <下游> <它的版本>`，pin 写 `update <name> to <版本>`，lock 写 `lock <name> <版本>`）、推送、等 CI，再更新它的 pipx venv、在它的 venv 里 `uv sync`、对本机装了的每个宿主插件执行 spec 里的更新命令。
+6. 跑 `check`。
+
+遇到第一个失败就停，说明原因；每一步都先看做没做过，所以修好之后重跑同一条命令会接着做。每次推送前，新增的行里有本机 home 路径或 git 用户邮箱就拒绝推送。需要装好并登录 `gh`。spec 里没有更新命令（或读不到安装版本）的宿主插件留给你手动更新，会有提示。
 
 `config.toml`、`managed/` 和 `runs/` 有本机路径和 agent 生成的内容，都不进 git。
 

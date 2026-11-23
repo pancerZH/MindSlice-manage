@@ -1,4 +1,5 @@
-"""bump, sync and test: the commands that change files in a repo or run its commands. None of them commits."""
+"""bump, sync and test: the commands that change files in a repo or run its commands. None of them commits
+(release, in release.py, is the one command that does)."""
 
 import os
 import shlex
@@ -169,8 +170,11 @@ def plan_sync(ctx: Context, p: Project, to: str | None) -> list[tuple]:
     return steps
 
 
-def sync(ctx: Context, names: list[str], to: str | None, dry_run: bool) -> bool:
-    """Bring pins and locks up to the upstream release; True if every build, verify and test passed."""
+def sync(ctx: Context, names: list[str], to: str | None, dry_run: bool, hints: bool = True) -> bool:
+    """Bring pins and locks up to the upstream release; True if every build, verify and test passed.
+
+    hints=False leaves out the printed next steps (release carries them out itself).
+    """
     projects = [managed(ctx, n) for n in names] if names else ordered(ctx)
     ok, did = True, False
     for p in projects:
@@ -214,7 +218,8 @@ def sync(ctx: Context, names: list[str], to: str | None, dry_run: bool) -> bool:
                   and run_all(p.spec.test, p.repo, "test"))
         ok &= passed
         say(f"\n{p.name}: " + ("build、verify、test 都通过" if passed else "有命令失败，见上面的输出"))
-        next_steps(p, [plugin.hint for plugin in p.spec.plugins if plugin.hint])
+        if hints:
+            next_steps(p, [plugin.hint for plugin in p.spec.plugins if plugin.hint])
     if not did and not names:
         say("没有落后的 pin 或 lock。")
     return ok
